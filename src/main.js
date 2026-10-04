@@ -311,7 +311,7 @@ async function drawQR(payload) {
   await QRCode.toCanvas(els.qrCanvas, payload, {
     errorCorrectionLevel: 'L',
     margin: 2,
-    scale: 8,
+    width: 768,
     color: { dark: '#081114', light: '#ffffff' },
   })
 }
