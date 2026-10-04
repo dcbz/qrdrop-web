@@ -66,7 +66,7 @@ The output in `dist/` can be hosted as a static site.
 - Gzip compression uses the browser `CompressionStream` API when available.
 - Gzip decompression uses the browser `DecompressionStream` API when available.
 - QR codes are rendered in the browser with the `qrcode` package from an ESM CDN.
-- Receiver QR scanning uses the browser `BarcodeDetector` API, currently best supported in Chrome/Edge.
+- Receiver QR scanning uses `BarcodeDetector` when available, with a JavaScript `jsQR` fallback for iOS Safari and other browsers without `BarcodeDetector`.
 - The protocol matches `PROTOCOL.md`.
 
 ## Suggested settings

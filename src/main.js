@@ -1,4 +1,5 @@
 import QRCode from 'https://esm.sh/qrcode@1.5.4'
+import jsQR from 'https://esm.sh/jsqr@1.4.0'
 
 const $ = (id) => document.getElementById(id)
 
@@ -55,6 +56,8 @@ let timer = null
 let transferID = ''
 let preparedMeta = null
 let detector = null
+let fallbackCanvas = null
+let fallbackContext = null
 let cameraStream = null
 let scanTimer = null
 let receiveSession = null
@@ -376,25 +379,26 @@ function formatBytes(bytes) {
 }
 
 async function initReceiverSupport() {
-  if (!('BarcodeDetector' in window)) {
-    els.startCameraButton.disabled = true
-    els.receiveSupportNote.textContent = 'This browser does not support BarcodeDetector yet. Try Chrome/Edge on Android or desktop Chrome.'
-    return
+  if ('BarcodeDetector' in window) {
+    const formats = await BarcodeDetector.getSupportedFormats?.() ?? []
+    if (!formats.length || formats.includes('qr_code')) {
+      detector = new BarcodeDetector({ formats: ['qr_code'] })
+      els.receiveSupportNote.textContent = 'Receiver uses your camera locally through BarcodeDetector. No frames are uploaded.'
+      return
+    }
   }
-  const formats = await BarcodeDetector.getSupportedFormats?.() ?? []
-  if (formats.length && !formats.includes('qr_code')) {
-    els.startCameraButton.disabled = true
-    els.receiveSupportNote.textContent = 'BarcodeDetector is available, but QR codes are not supported in this browser.'
-    return
-  }
-  detector = new BarcodeDetector({ formats: ['qr_code'] })
-  els.receiveSupportNote.textContent = 'Receiver uses your camera locally through BarcodeDetector. No frames are uploaded.'
+
+  fallbackCanvas = document.createElement('canvas')
+  fallbackContext = fallbackCanvas.getContext('2d', { willReadFrequently: true })
+  detector = null
+  els.startCameraButton.disabled = false
+  els.receiveSupportNote.textContent = 'BarcodeDetector is not available, so QRDrop Web will use a JavaScript QR decoder fallback. This works on iOS Safari but may be slower; use good lighting and keep the QR large.'
 }
 
 async function startCamera() {
   try {
-    if (!detector) await initReceiverSupport()
-    if (!detector) return
+    if (!detector && !fallbackContext) await initReceiverSupport()
+    if (!detector && !fallbackContext) return
     cameraStream = await navigator.mediaDevices.getUserMedia({
       video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
       audio: false,
@@ -421,22 +425,44 @@ function stopCamera() {
   }
   cameraStream = null
   els.cameraVideo.srcObject = null
-  els.startCameraButton.disabled = !detector
+  els.startCameraButton.disabled = !(detector || fallbackContext)
   els.stopCameraButton.disabled = true
   setStatus('Receive')
 }
 
 async function scanCameraFrame() {
-  if (!detector || els.cameraVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
+  if (els.cameraVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
   try {
-    const codes = await detector.detect(els.cameraVideo)
-    for (const code of codes) {
-      const payload = code.rawValue || code.rawData
-      if (typeof payload === 'string' && payload) await acceptReceivePayload(payload)
+    if (detector) {
+      const codes = await detector.detect(els.cameraVideo)
+      for (const code of codes) {
+        const payload = code.rawValue || code.rawData
+        if (typeof payload === 'string' && payload) await acceptReceivePayload(payload)
+      }
+      return
     }
+
+    const payload = scanWithJsQR()
+    if (payload) await acceptReceivePayload(payload)
   } catch (error) {
     // Some browsers throw transiently while video dimensions settle.
   }
+}
+
+function scanWithJsQR() {
+  if (!fallbackCanvas || !fallbackContext) return null
+  const width = els.cameraVideo.videoWidth
+  const height = els.cameraVideo.videoHeight
+  if (!width || !height) return null
+
+  const maxSide = 960
+  const scale = Math.min(1, maxSide / Math.max(width, height))
+  fallbackCanvas.width = Math.max(1, Math.round(width * scale))
+  fallbackCanvas.height = Math.max(1, Math.round(height * scale))
+  fallbackContext.drawImage(els.cameraVideo, 0, 0, fallbackCanvas.width, fallbackCanvas.height)
+  const imageData = fallbackContext.getImageData(0, 0, fallbackCanvas.width, fallbackCanvas.height)
+  const result = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' })
+  return result?.data || null
 }
 
 function resetReceiver() {
