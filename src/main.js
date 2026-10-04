@@ -41,6 +41,7 @@ const els = {
   invalidCount: $('invalidCount'),
   receiveSupportNote: $('receiveSupportNote'),
   cameraVideo: $('cameraVideo'),
+  cameraOverlay: $('cameraOverlay'),
   receiveTitle: $('receiveTitle'),
   receiveSubtitle: $('receiveSubtitle'),
 }
@@ -410,7 +411,7 @@ async function startCamera() {
     els.receiveTitle.textContent = 'Scanning…'
     els.receiveSubtitle.textContent = 'Point the camera at a QRDrop setup QR.'
     setStatus('Scanning')
-    scanTimer = setInterval(scanCameraFrame, 100)
+    scanTimer = setInterval(scanCameraFrame, 65)
   } catch (error) {
     console.error(error)
     receiveMessage(`Camera error: ${error.message || error}`)
@@ -455,13 +456,13 @@ function scanWithJsQR() {
   const height = els.cameraVideo.videoHeight
   if (!width || !height) return null
 
-  const maxSide = 960
+  const maxSide = 1280
   const scale = Math.min(1, maxSide / Math.max(width, height))
   fallbackCanvas.width = Math.max(1, Math.round(width * scale))
   fallbackCanvas.height = Math.max(1, Math.round(height * scale))
   fallbackContext.drawImage(els.cameraVideo, 0, 0, fallbackCanvas.width, fallbackCanvas.height)
   const imageData = fallbackContext.getImageData(0, 0, fallbackCanvas.width, fallbackCanvas.height)
-  const result = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' })
+  const result = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' })
   return result?.data || null
 }
 
@@ -476,6 +477,7 @@ function resetReceiver() {
   els.receiveFileCard.classList.add('hidden')
   els.receiveTitle.textContent = 'Receiver ready'
   els.receiveSubtitle.textContent = 'Camera frames are decoded locally in this browser.'
+  els.cameraOverlay.textContent = 'Start camera and scan setup QR'
   receiveProgress(0, 'Start the camera and scan a setup QR.')
   updateReceiveStats()
 }
@@ -529,9 +531,11 @@ async function acceptReceivePayload(payload) {
 
   receiveSession.chunks.set(packet.i, bytes)
   updateReceiveStats()
-  receiveProgress(receiveSession.chunks.size / receiveSession.total, `Receiving ${receiveSession.name}: ${receiveSession.chunks.size}/${receiveSession.total}`)
+  const progress = receiveSession.chunks.size / receiveSession.total
+  receiveProgress(progress, `Receiving ${receiveSession.name}: ${receiveSession.chunks.size}/${receiveSession.total}. Keep the sender looping.`)
   els.receiveTitle.textContent = `${receiveSession.name}`
-  els.receiveSubtitle.textContent = `Receiving QR frames… ${Math.round((receiveSession.chunks.size / receiveSession.total) * 100)}%`
+  els.receiveSubtitle.textContent = `Receiving QR frames… ${Math.round(progress * 100)}% · missing ${receiveSession.total - receiveSession.chunks.size}`
+  els.cameraOverlay.textContent = `${Math.round(progress * 100)}% · ${receiveSession.chunks.size}/${receiveSession.total} frames`
 
   if (receiveSession.chunks.size === receiveSession.total) await finishReceiveSession()
 }
@@ -557,6 +561,10 @@ function startReceiveSession(setup) {
   els.receiveFileName.textContent = setup.n
   els.receiveFileMeta.textContent = `${setup.t} frames · ${formatBytes(setup.s)}${setup.c ? ` · ${setup.c}` : ''}`
   receiveProgress(0, `Setup received for ${setup.n}. Start the sender stream.`)
+  els.receiveTitle.textContent = 'Setup QR received'
+  els.receiveSubtitle.textContent = 'Start the sender stream now. Keep it looping until complete.'
+  els.cameraOverlay.textContent = '✅ Setup received — start sender now'
+  navigator.vibrate?.([120, 80, 120])
   updateReceiveStats()
 }
 
@@ -602,6 +610,8 @@ async function finishReceiveSession() {
   els.receiveFileMeta.textContent = `${formatBytes(output.byteLength)} ready · ${session.total} frames`
   els.receiveTitle.textContent = 'Transfer complete'
   els.receiveSubtitle.textContent = 'Tap Download to save the file.'
+  els.cameraOverlay.textContent = '✅ Complete — download ready'
+  navigator.vibrate?.([180, 80, 180, 80, 180])
   receiveProgress(1, `Complete: ${session.name}`)
   setStatus('Complete')
 }
