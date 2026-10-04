@@ -383,7 +383,7 @@ async function initReceiverSupport() {
     const formats = await BarcodeDetector.getSupportedFormats?.() ?? []
     if (!formats.length || formats.includes('qr_code')) {
       detector = new BarcodeDetector({ formats: ['qr_code'] })
-      els.receiveSupportNote.textContent = 'Receiver uses your camera locally through BarcodeDetector. No frames are uploaded.'
+      els.receiveSupportNote.textContent = 'Camera scanning runs locally in your browser. No frames are uploaded.'
       return
     }
   }
@@ -392,7 +392,7 @@ async function initReceiverSupport() {
   fallbackContext = fallbackCanvas.getContext('2d', { willReadFrequently: true })
   detector = null
   els.startCameraButton.disabled = false
-  els.receiveSupportNote.textContent = 'BarcodeDetector is not available, so QRDrop Web will use a JavaScript QR decoder fallback. This works on iOS Safari but may be slower; use good lighting and keep the QR large.'
+  els.receiveSupportNote.textContent = 'Camera scanning runs locally in your browser. No frames are uploaded. Keep the QR code large and well lit.'
 }
 
 async function startCamera() {
