@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QRDrop Web</title>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">QRDrop Web</p>
+          <h1>Send files by animated QR codes</h1>
+          <p class="lede">Everything runs locally in your browser. Files are never uploaded.</p>
+        </div>
+        <div class="status-pill" id="statusPill">Idle</div>
+      </header>
+
+      <main class="layout">
+        <section class="panel controls">
+          <div class="dropzone" id="dropzone" role="button" tabindex="0">
+            <input id="fileInput" type="file" />
+            <span class="drop-icon">⬆</span>
+            <strong>Choose a file</strong>
+            <small>or drag and drop it here</small>
+          </div>
+
+          <div class="file-card hidden" id="fileCard">
+            <div>
+              <strong id="fileName">No file</strong>
+              <small id="fileMeta"></small>
+            </div>
+            <button id="clearButton" type="button" class="ghost">Clear</button>
+          </div>
+
+          <div class="grid-two">
+            <label>
+              Chunk size
+              <input id="chunkSize" type="number" min="1" max="4096" step="1" value="300" />
+              <small>bytes per QR frame</small>
+            </label>
+            <label>
+              FPS
+              <input id="fps" type="number" min="0.2" max="30" step="0.1" value="5" />
+              <small>frames per second</small>
+            </label>
+          </div>
+
+          <label class="checkline">
+            <input id="compress" type="checkbox" checked />
+            <span>Gzip first when smaller</span>
+          </label>
+
+          <div class="button-row">
+            <button id="prepareButton" type="button">Prepare</button>
+            <button id="startButton" type="button" disabled>Start</button>
+            <button id="pauseButton" type="button" disabled>Pause</button>
+            <button id="setupButton" type="button" disabled>Setup QR</button>
+          </div>
+
+          <div class="progress-wrap">
+            <div class="progress-bar"><div id="progressBar"></div></div>
+            <div class="progress-text" id="progressText">Pick a file to begin.</div>
+          </div>
+        </section>
+
+        <section class="panel display">
+          <canvas id="qrCanvas" width="768" height="768" aria-label="QR code"></canvas>
+          <div class="frame-info">
+            <strong id="frameTitle">Waiting</strong>
+            <span id="frameSubtitle">Select a file, then scan the setup QR with QRDrop.</span>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <p>Tip: maximize this window and keep the full QR code visible. Settings are mirrored in the URL hash; selected files stay local and are not placed in the URL.</p>
+      </footer>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
