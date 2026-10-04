@@ -11,13 +11,18 @@
       <header class="hero">
         <div>
           <p class="eyebrow">QRDrop Web</p>
-          <h1>Send files by animated QR codes</h1>
+          <h1>Send and receive files by QR</h1>
           <p class="lede">Everything runs locally in your browser. Files are never uploaded.</p>
         </div>
         <div class="status-pill" id="statusPill">Idle</div>
       </header>
 
-      <main class="layout">
+      <nav class="tabs" aria-label="Mode">
+        <button id="sendTab" class="tab active" type="button">Send</button>
+        <button id="receiveTab" class="tab" type="button">Receive</button>
+      </nav>
+
+      <main id="sendView" class="layout">
         <section class="panel controls">
           <div class="dropzone" id="dropzone" role="button" tabindex="0">
             <input id="fileInput" type="file" />
@@ -74,8 +79,48 @@
         </section>
       </main>
 
+      <main id="receiveView" class="layout hidden">
+        <section class="panel controls">
+          <div class="button-row">
+            <button id="startCameraButton" type="button">Start Camera</button>
+            <button id="stopCameraButton" type="button" class="ghost" disabled>Stop</button>
+            <button id="resetReceiveButton" type="button" class="ghost">Reset</button>
+          </div>
+
+          <div class="progress-wrap">
+            <div class="progress-bar"><div id="receiveProgressBar"></div></div>
+            <div class="progress-text" id="receiveProgressText">Start the camera and scan a setup QR.</div>
+          </div>
+
+          <div class="file-card hidden" id="receiveFileCard">
+            <div>
+              <strong id="receiveFileName">No file</strong>
+              <small id="receiveFileMeta"></small>
+            </div>
+            <a id="downloadLink" class="download hidden" href="#" download>Download</a>
+          </div>
+
+          <div class="stats">
+            <span id="receiveCount">0 / 0</span>
+            <span id="duplicateCount">Duplicates 0</span>
+            <span id="invalidCount">Invalid 0</span>
+          </div>
+
+          <p class="help" id="receiveSupportNote"></p>
+        </section>
+
+        <section class="panel display camera-panel">
+          <video id="cameraVideo" playsinline muted></video>
+          <div class="scan-box"></div>
+          <div class="frame-info">
+            <strong id="receiveTitle">Receiver ready</strong>
+            <span id="receiveSubtitle">Camera frames are decoded locally in this browser.</span>
+          </div>
+        </section>
+      </main>
+
       <footer>
-        <p>Tip: maximize this window and keep the full QR code visible. Settings are mirrored in the URL hash; selected files stay local and are not placed in the URL.</p>
+        <p>Tip: maximize sender windows and keep the full QR code visible. Settings are mirrored in the URL hash; selected files stay local and are not placed in the URL.</p>
       </footer>
     </div>
     <script type="module" src="./src/main.js"></script>

@@ -22,6 +22,26 @@ const els = {
   frameTitle: $('frameTitle'),
   frameSubtitle: $('frameSubtitle'),
   statusPill: $('statusPill'),
+  sendTab: $('sendTab'),
+  receiveTab: $('receiveTab'),
+  sendView: $('sendView'),
+  receiveView: $('receiveView'),
+  startCameraButton: $('startCameraButton'),
+  stopCameraButton: $('stopCameraButton'),
+  resetReceiveButton: $('resetReceiveButton'),
+  receiveProgressBar: $('receiveProgressBar'),
+  receiveProgressText: $('receiveProgressText'),
+  receiveFileCard: $('receiveFileCard'),
+  receiveFileName: $('receiveFileName'),
+  receiveFileMeta: $('receiveFileMeta'),
+  downloadLink: $('downloadLink'),
+  receiveCount: $('receiveCount'),
+  duplicateCount: $('duplicateCount'),
+  invalidCount: $('invalidCount'),
+  receiveSupportNote: $('receiveSupportNote'),
+  cameraVideo: $('cameraVideo'),
+  receiveTitle: $('receiveTitle'),
+  receiveSubtitle: $('receiveSubtitle'),
 }
 
 const MAX_FILE_SIZE = 100 * 1024 * 1024
@@ -34,10 +54,24 @@ let loops = 0
 let timer = null
 let transferID = ''
 let preparedMeta = null
+let detector = null
+let cameraStream = null
+let scanTimer = null
+let receiveSession = null
+let receiveDuplicates = 0
+let receiveInvalid = 0
+let receiveObjectURL = null
 
 loadSettingsFromHash()
 writeSettingsToHash()
 renderEmptyQR()
+initReceiverSupport()
+
+els.sendTab.addEventListener('click', () => showMode('send'))
+els.receiveTab.addEventListener('click', () => showMode('receive'))
+els.startCameraButton.addEventListener('click', startCamera)
+els.stopCameraButton.addEventListener('click', stopCamera)
+els.resetReceiveButton.addEventListener('click', resetReceiver)
 
 for (const input of [els.chunkSize, els.fps, els.compress]) {
   input.addEventListener('input', writeSettingsToHash)
@@ -76,6 +110,15 @@ els.prepareButton.addEventListener('click', prepare)
 els.startButton.addEventListener('click', start)
 els.pauseButton.addEventListener('click', pause)
 els.setupButton.addEventListener('click', showSetup)
+
+function showMode(mode) {
+  const receiving = mode === 'receive'
+  els.sendView.classList.toggle('hidden', receiving)
+  els.receiveView.classList.toggle('hidden', !receiving)
+  els.sendTab.classList.toggle('active', !receiving)
+  els.receiveTab.classList.toggle('active', receiving)
+  setStatus(receiving ? 'Receive' : (frames.length ? 'Ready' : 'Idle'))
+}
 
 function loadSettingsFromHash() {
   const params = new URLSearchParams(location.hash.replace(/^#/, ''))
@@ -330,4 +373,274 @@ function formatBytes(bytes) {
     unit++
   }
   return `${value.toFixed(value >= 10 ? 1 : 2)} ${units[unit]}`
+}
+
+async function initReceiverSupport() {
+  if (!('BarcodeDetector' in window)) {
+    els.startCameraButton.disabled = true
+    els.receiveSupportNote.textContent = 'This browser does not support BarcodeDetector yet. Try Chrome/Edge on Android or desktop Chrome.'
+    return
+  }
+  const formats = await BarcodeDetector.getSupportedFormats?.() ?? []
+  if (formats.length && !formats.includes('qr_code')) {
+    els.startCameraButton.disabled = true
+    els.receiveSupportNote.textContent = 'BarcodeDetector is available, but QR codes are not supported in this browser.'
+    return
+  }
+  detector = new BarcodeDetector({ formats: ['qr_code'] })
+  els.receiveSupportNote.textContent = 'Receiver uses your camera locally through BarcodeDetector. No frames are uploaded.'
+}
+
+async function startCamera() {
+  try {
+    if (!detector) await initReceiverSupport()
+    if (!detector) return
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false,
+    })
+    els.cameraVideo.srcObject = cameraStream
+    await els.cameraVideo.play()
+    els.startCameraButton.disabled = true
+    els.stopCameraButton.disabled = false
+    els.receiveTitle.textContent = 'Scanning…'
+    els.receiveSubtitle.textContent = 'Point the camera at a QRDrop setup QR.'
+    setStatus('Scanning')
+    scanTimer = setInterval(scanCameraFrame, 100)
+  } catch (error) {
+    console.error(error)
+    receiveMessage(`Camera error: ${error.message || error}`)
+  }
+}
+
+function stopCamera() {
+  if (scanTimer) clearInterval(scanTimer)
+  scanTimer = null
+  if (cameraStream) {
+    for (const track of cameraStream.getTracks()) track.stop()
+  }
+  cameraStream = null
+  els.cameraVideo.srcObject = null
+  els.startCameraButton.disabled = !detector
+  els.stopCameraButton.disabled = true
+  setStatus('Receive')
+}
+
+async function scanCameraFrame() {
+  if (!detector || els.cameraVideo.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return
+  try {
+    const codes = await detector.detect(els.cameraVideo)
+    for (const code of codes) {
+      const payload = code.rawValue || code.rawData
+      if (typeof payload === 'string' && payload) await acceptReceivePayload(payload)
+    }
+  } catch (error) {
+    // Some browsers throw transiently while video dimensions settle.
+  }
+}
+
+function resetReceiver() {
+  receiveSession = null
+  receiveDuplicates = 0
+  receiveInvalid = 0
+  if (receiveObjectURL) URL.revokeObjectURL(receiveObjectURL)
+  receiveObjectURL = null
+  els.downloadLink.classList.add('hidden')
+  els.downloadLink.removeAttribute('href')
+  els.receiveFileCard.classList.add('hidden')
+  els.receiveTitle.textContent = 'Receiver ready'
+  els.receiveSubtitle.textContent = 'Camera frames are decoded locally in this browser.'
+  receiveProgress(0, 'Start the camera and scan a setup QR.')
+  updateReceiveStats()
+}
+
+async function acceptReceivePayload(payload) {
+  let packet
+  try {
+    packet = JSON.parse(payload)
+  } catch {
+    receiveInvalid++
+    updateReceiveStats()
+    return
+  }
+
+  if (packet?.v !== 1 || typeof packet.k !== 'string') {
+    receiveInvalid++
+    updateReceiveStats()
+    return
+  }
+
+  if (packet.k === 'setup') {
+    if (!validSetup(packet)) {
+      receiveInvalid++
+      receiveMessage('Invalid setup QR.')
+      updateReceiveStats()
+      return
+    }
+    if (!receiveSession || receiveSession.id !== packet.id) startReceiveSession(packet)
+    return
+  }
+
+  if (!receiveSession) return
+  if (packet.k !== 'data' || !validData(packet, receiveSession)) {
+    receiveInvalid++
+    updateReceiveStats()
+    return
+  }
+
+  if (receiveSession.chunks.has(packet.i)) {
+    receiveDuplicates++
+    updateReceiveStats()
+    return
+  }
+
+  const bytes = fromBase64(packet.d)
+  if (bytes.byteLength > 8192 || await sha256Hex(bytes) !== packet.h) {
+    receiveInvalid++
+    updateReceiveStats()
+    return
+  }
+
+  receiveSession.chunks.set(packet.i, bytes)
+  updateReceiveStats()
+  receiveProgress(receiveSession.chunks.size / receiveSession.total, `Receiving ${receiveSession.name}: ${receiveSession.chunks.size}/${receiveSession.total}`)
+  els.receiveTitle.textContent = `${receiveSession.name}`
+  els.receiveSubtitle.textContent = `Receiving QR frames… ${Math.round((receiveSession.chunks.size / receiveSession.total) * 100)}%`
+
+  if (receiveSession.chunks.size === receiveSession.total) await finishReceiveSession()
+}
+
+function startReceiveSession(setup) {
+  if (receiveObjectURL) URL.revokeObjectURL(receiveObjectURL)
+  receiveObjectURL = null
+  receiveSession = {
+    id: setup.id,
+    name: setup.n,
+    size: setup.s,
+    total: setup.t,
+    fileHash: setup.f,
+    compression: setup.c || '',
+    originalSize: setup.us,
+    originalHash: setup.uf,
+    chunks: new Map(),
+  }
+  receiveDuplicates = 0
+  receiveInvalid = 0
+  els.downloadLink.classList.add('hidden')
+  els.receiveFileCard.classList.remove('hidden')
+  els.receiveFileName.textContent = setup.n
+  els.receiveFileMeta.textContent = `${setup.t} frames · ${formatBytes(setup.s)}${setup.c ? ` · ${setup.c}` : ''}`
+  receiveProgress(0, `Setup received for ${setup.n}. Start the sender stream.`)
+  updateReceiveStats()
+}
+
+async function finishReceiveSession() {
+  const session = receiveSession
+  if (!session) return
+  receiveProgress(1, 'Assembling and verifying…')
+  const payload = new Uint8Array(session.size)
+  let offset = 0
+  for (let i = 0; i < session.total; i++) {
+    const chunk = session.chunks.get(i)
+    if (!chunk) return
+    payload.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  if (offset !== session.size || await sha256Hex(payload) !== session.fileHash) {
+    receiveInvalid++
+    receiveMessage('Final transfer verification failed.')
+    updateReceiveStats()
+    return
+  }
+
+  let output = payload
+  if (session.compression === 'gzip') {
+    output = await gunzip(payload)
+    if (output.byteLength !== session.originalSize || await sha256Hex(output) !== session.originalHash) {
+      receiveInvalid++
+      receiveMessage('Gzip verification failed.')
+      updateReceiveStats()
+      return
+    }
+  } else if (session.compression) {
+    receiveMessage(`Unsupported compression: ${session.compression}`)
+    return
+  }
+
+  const blob = new Blob([output], { type: 'application/octet-stream' })
+  receiveObjectURL = URL.createObjectURL(blob)
+  els.downloadLink.href = receiveObjectURL
+  els.downloadLink.download = safeDownloadName(session.name)
+  els.downloadLink.textContent = 'Download'
+  els.downloadLink.classList.remove('hidden')
+  els.receiveFileMeta.textContent = `${formatBytes(output.byteLength)} ready · ${session.total} frames`
+  els.receiveTitle.textContent = 'Transfer complete'
+  els.receiveSubtitle.textContent = 'Tap Download to save the file.'
+  receiveProgress(1, `Complete: ${session.name}`)
+  setStatus('Complete')
+}
+
+function validSetup(setup) {
+  return setup.k === 'setup' && isHex(setup.id, 12) && validName(setup.n) &&
+    Number.isInteger(setup.s) && setup.s >= 0 && setup.s <= MAX_FILE_SIZE &&
+    Number.isInteger(setup.t) && setup.t > 0 && setup.t <= MAX_CHUNKS &&
+    isHex(setup.f, 64) && Number.isInteger(setup.ms) && setup.ms >= 100 && setup.ms <= 5000 &&
+    validCompressionMeta(setup)
+}
+
+function validData(packet, session) {
+  return packet.id === session.id && packet.n === session.name && packet.s === session.size &&
+    packet.t === session.total && packet.f === session.fileHash && Number.isInteger(packet.i) &&
+    packet.i >= 0 && packet.i < session.total && typeof packet.d === 'string' && isHex(packet.h, 64)
+}
+
+function validCompressionMeta(setup) {
+  if (!setup.c) return setup.us == null && setup.uf == null
+  return setup.c === 'gzip' && Number.isInteger(setup.us) && setup.us >= 0 && setup.us <= MAX_FILE_SIZE && isHex(setup.uf, 64)
+}
+
+function validName(name) {
+  return typeof name === 'string' && name.length > 0 && !name.includes('/') && !name.includes('\\')
+}
+
+function isHex(value, length) {
+  return typeof value === 'string' && value.length === length && /^[0-9a-fA-F]+$/.test(value)
+}
+
+function updateReceiveStats() {
+  const got = receiveSession?.chunks.size ?? 0
+  const total = receiveSession?.total ?? 0
+  els.receiveCount.textContent = `${got} / ${total}`
+  els.duplicateCount.textContent = `Duplicates ${receiveDuplicates}`
+  els.invalidCount.textContent = `Invalid ${receiveInvalid}`
+}
+
+function receiveProgress(value, text) {
+  els.receiveProgressBar.style.width = `${Math.max(0, Math.min(1, value)) * 100}%`
+  els.receiveProgressText.textContent = text
+}
+
+function receiveMessage(text) {
+  els.receiveProgressText.textContent = text
+  els.receiveSubtitle.textContent = text
+}
+
+function fromBase64(text) {
+  const binary = atob(text)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  return bytes
+}
+
+async function gunzip(bytes) {
+  if (typeof DecompressionStream === 'undefined') throw new Error('This browser cannot decompress gzip transfers.')
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))
+  return new Uint8Array(await new Response(stream).arrayBuffer())
+}
+
+function safeDownloadName(name) {
+  const cleaned = name.replace(/[^A-Za-z0-9._-]/g, '_')
+  if (!cleaned || cleaned === '.' || cleaned === '..') return 'received-file'
+  if (cleaned.startsWith('.')) return `received-${cleaned.replace(/^\.+/, '') || 'file'}`
+  return cleaned
 }

@@ -1,8 +1,8 @@
 # qrdrop-web
 
-Browser-based QRDrop/QRA1 sender.
+Browser-based QRDrop/QRA1 sender and receiver.
 
-It is the web equivalent of `qrdrop-cli`: choose a local file, scan one setup QR, then stream animated data QR frames. All file processing happens client-side in the browser; the selected file is never uploaded and is not embedded in the URL.
+It is the web equivalent of `qrdrop-cli`: choose a local file, scan one setup QR, then stream animated data QR frames. It also includes a receiver tab that uses the phone/browser camera to scan QRDrop streams and reconstruct files. All file processing happens client-side in the browser; selected files and camera frames are never uploaded and are not embedded in the URL.
 
 Settings are mirrored into the URL hash (`#chunkSize=...&fps=...`) so a hosted/static copy can preserve sender settings without server-side state.
 
@@ -45,7 +45,11 @@ npm install
 npm run dev
 ```
 
-Open the printed local URL, choose a file, press **Prepare**, scan the setup QR with QRDrop, then press **Start**.
+Open the printed local URL.
+
+Sender flow: choose a file, press **Prepare**, scan the setup QR with QRDrop, then press **Start**.
+
+Receiver flow: open the **Receive** tab, press **Start Camera**, scan a setup QR, then scan the stream until a download link appears. Camera access requires HTTPS except on `localhost`.
 
 ## Build static assets
 
@@ -60,7 +64,9 @@ The output in `dist/` can be hosted as a static site.
 - Files are read with the browser File API.
 - SHA-256 is computed with Web Crypto.
 - Gzip compression uses the browser `CompressionStream` API when available.
-- QR codes are rendered in the browser with the `qrcode` package.
+- Gzip decompression uses the browser `DecompressionStream` API when available.
+- QR codes are rendered in the browser with the `qrcode` package from an ESM CDN.
+- Receiver QR scanning uses the browser `BarcodeDetector` API, currently best supported in Chrome/Edge.
 - The protocol matches `PROTOCOL.md`.
 
 ## Suggested settings

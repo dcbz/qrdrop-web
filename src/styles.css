@@ -24,6 +24,9 @@ small { color: var(--muted); }
 h1 { font-size: clamp(2rem, 5vw, 4.8rem); line-height: 0.95; margin: 0; max-width: 760px; }
 .lede { color: var(--muted); font-size: 1.1rem; }
 .status-pill { border: 1px solid var(--line); background: rgba(255,255,255,0.08); padding: 0.7rem 1rem; border-radius: 999px; color: var(--mint); font-weight: 800; }
+.tabs { display: inline-flex; gap: 8px; padding: 6px; border: 1px solid var(--line); background: rgba(255,255,255,0.06); border-radius: 999px; margin-bottom: 20px; }
+.tab { background: transparent; color: #dff7f0; border-radius: 999px; padding: 0.65rem 1.2rem; }
+.tab.active { background: var(--mint); color: #04110f; }
 .layout { display: grid; grid-template-columns: minmax(310px, 430px) 1fr; gap: 20px; align-items: start; }
 .panel { border: 1px solid var(--line); background: var(--panel); border-radius: 28px; padding: 20px; backdrop-filter: blur(18px); box-shadow: 0 20px 60px rgba(0,0,0,0.25); }
 .controls { display: grid; gap: 16px; }
@@ -48,6 +51,13 @@ h1 { font-size: clamp(2rem, 5vw, 4.8rem); line-height: 0.95; margin: 0; max-widt
 .frame-info { text-align: center; display: grid; gap: 6px; }
 .frame-info strong { color: var(--mint); font-size: 1.2rem; }
 .frame-info span { color: var(--muted); }
+.camera-panel { position: relative; overflow: hidden; }
+#cameraVideo { width: min(72vh, 100%); max-width: 760px; aspect-ratio: 1; object-fit: contain; background: #000; border-radius: 18px; }
+.scan-box { position: absolute; width: min(42vh, 52%); aspect-ratio: 1; border: 4px solid var(--mint); border-radius: 28px; pointer-events: none; box-shadow: 0 0 0 999px rgba(0,0,0,0.08); }
+.stats { display: flex; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: 0.92rem; }
+.stats span { border: 1px solid var(--line); border-radius: 999px; padding: 0.4rem 0.7rem; background: rgba(0,0,0,0.16); }
+.download { color: #04110f; background: var(--mint); border-radius: 12px; text-decoration: none; font-weight: 800; padding: 0.65rem 0.8rem; }
+.help { color: var(--muted); margin: 0; line-height: 1.45; }
 footer { color: var(--muted); margin-top: 18px; text-align: center; }
 
 @media (max-width: 860px) {
